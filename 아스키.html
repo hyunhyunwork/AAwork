@@ -1,0 +1,350 @@
+<!doctype html>
+<html lang="ko">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>사진 → ASCII 변환기</title>
+  <style>
+    :root{
+      --bg1:#0f1115; --bg2:#171a25; --ink:#e6ecff; --muted:#a6b0d4; --line:#2a2f42;
+      --panel:#141826; --panel2:#0f1422; --accent:#9dffce;
+    }
+    html,body{height:100%}
+    body{margin:0; font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, "Noto Sans KR", monospace; background: radial-gradient(1000px 600px at 50% -10%, var(--bg2), var(--bg1)); color:var(--ink); display:grid; place-items:start center}
+    .app{width:min(1100px,96vw); padding:18px 18px 36px}
+    h1{margin:0 0 8px; font-size:20px}
+    .sub{margin:0 0 12px; font-size:12px; color:var(--muted)}
+
+    .grid{display:grid; grid-template-columns: 320px 1fr; gap:14px}
+    @media (max-width: 880px){ .grid{grid-template-columns: 1fr} }
+
+    .card{background: linear-gradient(180deg, var(--panel), var(--panel2)); border:1px solid var(--line); border-radius:16px; padding:14px}
+    .row{display:flex; align-items:center; gap:10px; margin:10px 0}
+    label{font-size:12px; color:var(--muted); width:120px}
+    input[type="range"]{width: 100%}
+    .switch{display:flex; gap:10px; flex-wrap:wrap}
+    .switch > label{width:auto}
+
+    .drop{border:1px dashed #2f3755; border-radius:14px; padding:16px; text-align:center; color:#c8d0f3; background: rgba(255,255,255,.02)}
+    .drop.drag{background: rgba(157,255,206,.06); border-color:#57ffc2}
+    .drop input{display:none}
+    .thumb{margin-top:10px; font-size:12px; color:var(--muted)}
+
+    .btns{display:flex; flex-wrap:wrap; gap:8px}
+    button{appearance:none; border:1px solid #3a415f; background:#1a2033; color:var(--ink); padding:9px 12px; border-radius:10px; cursor:pointer; font-weight:700}
+    button:hover{background:#232a45}
+
+    .ascii-wrap{position:relative; border:1px solid var(--line); border-radius:14px; overflow:auto; background:#0b0e16}
+    .ascii{white-space: pre; font: 12px/12px ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; padding:14px; margin:0}
+    .ascii.color{white-space: pre; font: 12px/12px ui-monospace, SFMono-Regular, Menlo, Consolas, monospace}
+
+    .bar{height:8px; border-radius:999px; background:#1a2136; outline: 1px solid #2a2f42; overflow:hidden}
+    .bar > i{display:block; height:100%; width:0%; background: linear-gradient(90deg, #b3c2ff, #7ae1ff)}
+
+    .footer{margin-top:10px; font-size:11px; color:var(--muted)}
+  </style>
+</head>
+<body>
+  <div class="app">
+    <h1>사진 → ASCII 변환기</h1>
+    <p class="sub">이미지를 업로드해도 서버로 전송되지 않아요.</p>
+
+    <div class="grid">
+      <!-- 좌측 패널 -->
+      <div class="card">
+        <div class="drop" id="drop">
+          <p style="margin:0 0 6px">이미지 끌어놓기 또는 선택하기</p>
+          <label for="file" style="display:inline-block; padding:6px 10px; border:1px solid #3a415f; border-radius:8px; cursor:pointer;">파일 선택</label>
+          <input id="file" type="file" accept="image/*" />
+          <div class="thumb" id="thumb">아직 파일 없음</div>
+        </div>
+
+        <div class="row">
+          <label>문자 세트</label>
+          <select id="charset">
+            <option value="@%#*+=-:. ">@%#*+=-:. (Dense)</option>
+            <option value="MWN0QOZodc+|=;:,._ ">블록+기호 혼합</option>
+            <option value="█▓▒░ .">블록 (선명)</option>
+            <option value="@$B%8&WM#*oahkbdpqwmZO0QLCJUYXzcvunxrjft/|()1{}[]?-_+~<>i!lI;:,\^`'. ">장문자(정교)</option>
+          </select>
+        </div>
+        <div class="row">
+          <label>가로 문자 수</label>
+          <input id="cols" type="range" min="40" max="320" step="4" value="140" />
+          <span id="colsVal" style="width:50px; text-align:right">140</span>
+        </div>
+        <div class="row">
+          <label>명암 대비</label>
+          <input id="contrast" type="range" min="0.5" max="2.0" step="0.05" value="1.0" />
+          <span id="contrastVal" style="width:50px; text-align:right">1.00</span>
+        </div>
+        <div class="row">
+          <label>문자 종횡비</label>
+          <input id="aspect" type="range" min="1.6" max="2.4" step="0.05" value="2.0" />
+          <span id="aspectVal" style="width:50px; text-align:right">2.00</span>
+        </div>
+        <div class="row switch">
+          <label><input id="invert" type="checkbox" /> 밝기 반전</label>
+          <label><input id="colorize" type="checkbox" /> 컬러 ASCII</label>
+          <label><input id="dither" type="checkbox" /> 디더링</label>
+          <label><input id="bgdark" type="checkbox" checked /> 다크 배경</label>
+        </div>
+        <div class="row btns">
+          <button id="renderBtn">변환하기</button>
+          <button id="copyBtn">복사</button>
+          <button id="txtBtn">TXT 저장</button>
+          <button id="pngBtn">PNG 저장</button>
+        </div>
+        <div class="row" style="align-items:center; gap:10px">
+          <label>진행</label>
+          <div class="bar" style="flex:1"><i id="progress"></i></div>
+          <span id="progLabel" style="font-size:11px; color:var(--muted); width:48px; text-align:right">0%</span>
+        </div>
+      </div>
+
+      <!-- 우측 출력 -->
+      <div class="card ascii-wrap" id="outWrap">
+        <pre id="ascii" class="ascii"></pre>
+      </div>
+    </div>
+
+    <p class="footer">Tip: 이 사이트는 2025년 8월 친구들의 요청에 의해 만들어졌습니다. </p>
+    <p class="footer">컬러 ASCII는 <em>복사</em> 시 HTML이 복사되고, <em>TXT</em>는 흑백 텍스트가 저장됩니다. PNG 저장은 렌더링된 아트를 이미지로 내보냅니다.</p>
+  </div>
+
+  <canvas id="work" style="display:none"></canvas>
+  <script>
+  const $ = (id) => document.getElementById(id);
+  const file = $('file'), drop = $('drop'), thumb=$('thumb');
+  const asciiEl = $('ascii'), outWrap=$('outWrap');
+  const charsetSel = $('charset');
+  const colsRange=$('cols'), colsVal=$('colsVal');
+  const contrastRange=$('contrast'), contrastVal=$('contrastVal');
+  const aspectRange=$('aspect'), aspectVal=$('aspectVal');
+  const invertChk=$('invert'), colorChk=$('colorize'), ditherChk=$('dither'), bgdark=$('bgdark');
+  const renderBtn=$('renderBtn'), copyBtn=$('copyBtn'), txtBtn=$('txtBtn'), pngBtn=$('pngBtn');
+  const progressBar=$('progress'), progLabel=$('progLabel');
+  const work = $('work'); const wctx = work.getContext('2d', { willReadFrequently: true });
+
+  let img = new Image();
+  let imgURL = null;
+  let lastHTML = '';
+
+  function setProgress(p){ p=Math.max(0,Math.min(1,p)); progressBar.style.width=(p*100).toFixed(0)+'%'; progLabel.textContent=(p*100).toFixed(0)+'%'; }
+
+  function numberLabel(range, label){ const upd=()=>label.textContent=(+range.value).toFixed(range.step.includes('.')?2:0); range.addEventListener('input',upd); upd(); }
+  numberLabel(colsRange, colsVal); numberLabel(contrastRange, contrastVal); numberLabel(aspectRange, aspectVal);
+
+  // Drag & Drop
+  drop.addEventListener('dragover', (e)=>{e.preventDefault(); drop.classList.add('drag');});
+  drop.addEventListener('dragleave', ()=>drop.classList.remove('drag'));
+  drop.addEventListener('drop', (e)=>{ e.preventDefault(); drop.classList.remove('drag'); if(e.dataTransfer.files && e.dataTransfer.files[0]) loadFile(e.dataTransfer.files[0]); });
+  file.addEventListener('change', ()=>{ if(file.files[0]) loadFile(file.files[0]); });
+
+  function loadFile(f){
+    if(!f.type.startsWith('image/')){ alert('이미지 파일을 선택하세요.'); return; }
+    if(imgURL) URL.revokeObjectURL(imgURL); imgURL = URL.createObjectURL(f);
+    img.onload=()=>{ thumb.textContent = `${f.name} (${img.naturalWidth}×${img.naturalHeight})`; setProgress(0); autosize(); render(); };
+    img.onerror=()=>alert('이미지를 불러오지 못했습니다.');
+    img.src = imgURL;
+  }
+
+  function autosize(){
+    if(!img.naturalWidth) return;
+    const targetW = Math.min(200, Math.max(100, Math.round(img.naturalWidth/8))); // 초깃값 대략화
+    colsRange.value = targetW; colsVal.textContent = targetW;
+  }
+
+  function drawDownscaled(cols, rows){
+    work.width = cols; work.height = rows;
+    wctx.imageSmoothingEnabled = true;
+    wctx.imageSmoothingQuality = 'high';
+    wctx.clearRect(0,0,cols,rows);
+    wctx.drawImage(img, 0, 0, cols, rows);
+  }
+
+  function getCharForLuma(luma, charset, invert){
+    // luma: 0..255 -> index 0..len-1
+    const len = charset.length; if(len===0) return ' ';
+    let t = luma / 255; // 0..1
+    // contrast
+    const c = parseFloat(contrastRange.value);
+    t = (t - 0.5) * c + 0.5; t = Math.max(0, Math.min(1, t));
+    if(invert) t = 1 - t;
+    let idx = Math.floor(t * (len-1));
+    return charset[idx];
+  }
+
+  function floydSteinberg(grayArr, w, h){
+    // grayArr: Uint8Array (0..255)
+    for(let y=0;y<h;y++){
+      for(let x=0;x<w;x++){
+        const i = y*w + x;
+        const old = grayArr[i];
+        const newV = old < 128 ? 0 : 255;
+        const err = old - newV;
+        grayArr[i] = newV;
+        const a=err*7/16, b=err*3/16, c=err*5/16, d=err*1/16;
+        if(x+1<w) grayArr[i+1] = clamp(grayArr[i+1]+a,0,255);
+        if(x>0 && y+1<h) grayArr[i+w-1] = clamp(grayArr[i+w-1]+b,0,255);
+        if(y+1<h) grayArr[i+w] = clamp(grayArr[i+w]+c,0,255);
+        if(x+1<w && y+1<h) grayArr[i+w+1] = clamp(grayArr[i+w+1]+d,0,255);
+      }
+    }
+  }
+
+  function clamp(v,min,max){ return Math.max(min, Math.min(max, v)); }
+
+  function render(){
+    if(!img.naturalWidth){ alert('이미지를 먼저 불러오세요.'); return; }
+
+    const cols = parseInt(colsRange.value,10);
+    const aspect = parseFloat(aspectRange.value); // charHeight = aspect * charWidth
+    const charW = 1, charH = aspect; // 샘플용 비율만 필요
+
+    const rows = Math.max(1, Math.floor(img.naturalHeight / (img.naturalWidth/cols) / aspect));
+
+    drawDownscaled(cols, rows);
+    const { data } = wctx.getImageData(0,0,cols,rows);
+
+    const charset = charsetSel.value;
+    const invert = invertChk.checked;
+    const colored = colorChk.checked;
+    const dith = ditherChk.checked;
+
+    const gray = new Uint8Array(cols*rows);
+
+    setProgress(0);
+    // 1) 그레이/컬러 샘플링
+    for(let y=0;y<rows;y++){
+      for(let x=0;x<cols;x++){
+        const i = (y*cols + x)*4;
+        const r = data[i], g = data[i+1], b = data[i+2];
+        const luma = Math.round(0.2126*r + 0.7152*g + 0.0722*b);
+        gray[y*cols+x] = luma;
+      }
+      if(y%20===0) setProgress(y/rows*0.4);
+    }
+
+    // 2) 디더링(선택)
+    if(dith){ floydSteinberg(gray, cols, rows); }
+    setProgress(0.45);
+
+    // 3) 문자열 조립
+    let html = '';
+    let text = '';
+    const bgc = bgdark.checked ? '#0b0e16' : '#ffffff';
+    asciiEl.style.background = bgc;
+    asciiEl.classList.toggle('color', colored);
+    asciiEl.style.color = bgdark.checked? '#e6ecff':'#111';
+
+    for(let y=0;y<rows;y++){
+      let lineHTML = '', lineTXT = '';
+      for(let x=0;x<cols;x++){
+        const l = gray[y*cols+x];
+        const ch = getCharForLuma(l, charset, invert);
+        lineTXT += ch;
+        if(colored){
+          const i = (y*cols + x)*4;
+          const r = data[i], g = data[i+1], b = data[i+2];
+          lineHTML += `<span style="color:rgb(${r},${g},${b})">${ch === '<' ? '&lt;' : ch === '>' ? '&gt;' : ch === '&' ? '&amp;' : ch}</span>`;
+        }else{
+          lineHTML += (ch === '<' ? '&lt;' : ch === '>' ? '&gt;' : ch === '&' ? '&amp;' : ch);
+        }
+      }
+      html += lineHTML + (y<rows-1?'\n':'');
+      text += lineTXT + (y<rows-1?'\n':'');
+      if(y%20===0) setProgress(0.45 + y/rows*0.5);
+    }
+    setProgress(1);
+
+    lastHTML = html;
+    asciiEl.innerHTML = html;
+    // 스크롤 맨 위로
+    outWrap.scrollTop = 0;
+  }
+
+  renderBtn.addEventListener('click', render);
+  invertChk.addEventListener('change', render);
+  colorChk.addEventListener('change', render);
+  ditherChk.addEventListener('change', render);
+  bgdark.addEventListener('change', render);
+  charsetSel.addEventListener('change', render);
+  colsRange.addEventListener('change', render);
+  contrastRange.addEventListener('change', render);
+  aspectRange.addEventListener('change', render);
+
+  // 복사: 컬러는 HTML, 흑백은 텍스트
+  copyBtn.addEventListener('click', async ()=>{
+    const colored = colorChk.checked;
+    if(colored){
+      const blob = new Blob([`<pre style="white-space:pre; font:12px/12px ui-monospace, Menlo, Consolas, monospace; background:${bgdark.checked?'#0b0e16':'#fff'}; color:${bgdark.checked?'#e6ecff':'#111'}">${lastHTML}</pre>`], {type:'text/html'});
+      await navigator.clipboard.write([ new ClipboardItem({ 'text/html': blob }) ]).catch(async ()=>{
+        // fallback: plain text
+        await navigator.clipboard.writeText(asciiEl.innerText);
+      });
+    }else{
+      await navigator.clipboard.writeText(asciiEl.innerText);
+    }
+    alert('클립보드로 복사되었습니다.');
+  });
+
+  // TXT 저장 (흑백 텍스트)
+  txtBtn.addEventListener('click', ()=>{
+    const blob = new Blob([asciiEl.innerText], {type:'text/plain;charset=utf-8'});
+    const a = document.createElement('a'); a.href = URL.createObjectURL(blob); a.download = 'ascii_art.txt'; a.click(); URL.revokeObjectURL(a.href);
+  });
+
+  // PNG 저장: 현재 출력(컬러/흑백) 그대로 캔버스에 그려서 이미지로
+  pngBtn.addEventListener('click', ()=>{
+    const lines = asciiEl.innerText.split('\n');
+    const fontSize = 12; const lineH = 12; // ascii css와 동일
+    // 줄 중 가장 긴 길이
+    const cols = lines.reduce((m,l)=>Math.max(m, l.length), 0);
+    const pad = 14; const W = cols*fontSize + pad*2; const H = lines.length*lineH + pad*2;
+    const cnv = document.createElement('canvas'); cnv.width=W; cnv.height=H;
+    const ctx = cnv.getContext('2d');
+    ctx.fillStyle = bgdark.checked? '#0b0e16':'#ffffff'; ctx.fillRect(0,0,W,H);
+    ctx.font = `${fontSize}px ui-monospace, SFMono-Regular, Menlo, Consolas, monospace`;
+    ctx.textBaseline = 'top';
+
+    if(colorChk.checked){
+      // HTML을 파싱하지 않고, 빠른 근사: 각 문자의 색을 다시 샘플링
+      // 화면 렌더 기준으로 cols/rows 계산
+      const colsNow = lines[0]?.length || parseInt(colsRange.value,10);
+      const aspect = parseFloat(aspectRange.value);
+      const rowsNow = lines.length;
+      // 기존 downscaled 버퍼 그대로 사용
+      const imgData = wctx.getImageData(0,0,colsNow,rowsNow).data;
+      for(let y=0;y<rowsNow;y++){
+        for(let x=0;x<colsNow;x++){
+          const ch = lines[y][x] || ' ';
+          const i = (y*colsNow + x)*4;
+          const r=imgData[i], g=imgData[i+1], b=imgData[i+2];
+          ctx.fillStyle = `rgb(${r},${g},${b})`;
+          ctx.fillText(ch, pad + x*fontSize, pad + y*lineH);
+        }
+      }
+    }else{
+      ctx.fillStyle = bgdark.checked? '#e6ecff':'#111111';
+      for(let y=0;y<lines.length;y++){
+        ctx.fillText(lines[y], pad, pad + y*lineH);
+      }
+    }
+
+    const url = cnv.toDataURL('image/png');
+    const a = document.createElement('a'); a.href = url; a.download = 'ascii_art.png'; a.click();
+  });
+
+  // 초기 안내 예시
+  asciiEl.textContent = [
+    '이미지를 올리면 이 영역에 ASCII 아트가 표시됩니다.',
+    '',
+    '• 가로 문자 수로 해상도를 조절하세요.',
+    '• 문자 종횡비는 글자 세로 비율(보통 2.0 근처)을 조정합니다.',
+    '• 디더링을 켜면 점묘 느낌이 강해집니다.',
+    '• 컬러 ASCII를 켜고 PNG로 저장하면 컬러로 저장됩니다.'
+  ].join('\n');
+  </script>
+</body>
+</html>
